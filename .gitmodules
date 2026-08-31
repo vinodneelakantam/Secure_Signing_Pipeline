@@ -1,0 +1,12 @@
+[submodule "third_party/can-utils"]
+	path = third_party/can-utils
+	url = https://github.com/linux-can/can-utils.git
+[submodule "third_party/mosquitto"]
+	path = third_party/mosquitto
+	url = https://github.com/eclipse/mosquitto.git
+[submodule "third_party/u-boot"]
+	path = third_party/u-boot
+	url = https://github.com/u-boot/u-boot.git
+[submodule "third_party/wireguard-linux-compat"]
+	path = third_party/wireguard-linux-compat
+	url = https://github.com/WireGuard/wireguard-linux-compat.git

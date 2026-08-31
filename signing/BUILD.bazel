@@ -1,0 +1,4 @@
+exports_files([
+    "sign_artifact.py",
+    "verify_artifact.py",
+])

@@ -1,0 +1,41 @@
+name: Secure signing pipeline
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  signing:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        method: [openssl, pki]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Generate ephemeral signing material
+        run: |
+          if [ "${{ matrix.method }}" = "openssl" ]; then
+            ./signing/openssl/gen_openssl_keys.sh "$RUNNER_TEMP/keys"
+          else
+            ./signing/pki/gen_ca_hierarchy.sh "$RUNNER_TEMP/keys"
+          fi
+      - name: Run signing and JTAG tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Configure and build signed can-utils
+        run: |
+          if [ "${{ matrix.method }}" = "openssl" ]; then
+            cmake -S . -B build -DENABLE_ARTIFACT_SIGNING=ON -DSIGNING_METHOD=openssl -DSIGNING_KEY="$RUNNER_TEMP/keys/signing.key"
+          else
+            cmake -S . -B build -DENABLE_ARTIFACT_SIGNING=ON -DSIGNING_METHOD=pki -DSIGNING_KEY="$RUNNER_TEMP/keys/leaf.key" -DSIGNING_CERT="$RUNNER_TEMP/keys/leaf.pem" -DSIGNING_CHAIN="$RUNNER_TEMP/keys/intermediate.pem"
+          fi
+          cmake --build build
+      - name: Verify signed candump
+        run: |
+          if [ "${{ matrix.method }}" = "openssl" ]; then
+            python3 signing/verify_artifact.py --in build/third_party/can-utils/candump --signature build/third_party/can-utils/candump.sig --public-key "$RUNNER_TEMP/keys/signing.pub"
+          else
+            python3 signing/verify_artifact.py --in build/third_party/can-utils/candump --signature build/third_party/can-utils/candump.sig --root-ca "$RUNNER_TEMP/keys/root.pem"
+          fi

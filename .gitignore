@@ -1,0 +1,11 @@
+build/
+build-*/
+__pycache__/
+*.py[cod]
+*.key
+*.csr
+*.srl
+*.sig
+keys/
+*.pem
+!yocto/meta-secure-signing/recipes-core/signing-keys/files/*.pem
