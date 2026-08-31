@@ -1,2 +1,9 @@
 bandit==1.9.4
 cyclonedx-bom==7.3.1
+
+# Transitive dependencies of cyclonedx-bom pinned to their minimum patched release
+# after security/sca/run_sca.sh flagged the resolver's default (unconstrained) picks:
+#   idna<3.15 -> PYSEC-2026-215 / GHSA-65pc-fj4g-8rjx (CVSS 6.9)
+#   lxml<6.1.0 -> PYSEC-2026-87 / GHSA-vfmq-68hx-4jfw (CVSS 7.5, XXE)
+idna>=3.15
+lxml>=6.1.0

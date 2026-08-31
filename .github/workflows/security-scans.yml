@@ -33,9 +33,50 @@ jobs:
       - name: Run static analysis
         run: ./security/sast/run_sast.sh
 
+  sca:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install SCA tooling
+        run: pip install --quiet -r security/requirements.txt
+      - name: Generate CycloneDX SBOM
+        run: python3 security/sbom/generate_sbom.py
+      - name: Scan for known vulnerabilities
+        run: ./security/sca/run_sca.sh
+
   dast:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Fuzz the verifier process boundary
         run: python3 security/dast/fuzz_verify_artifact.py --iterations 300
+      - name: Fuzz the release gate (unsigned/tampered/wrong-key artifacts)
+        run: python3 security/dast/fuzz_release_gate.py --iterations 300
+
+  release-gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Generate ephemeral signing key
+        run: ./signing/openssl/gen_openssl_keys.sh "$RUNNER_TEMP/keys"
+      - name: Build and sign can-utils
+        run: |
+          cmake -S . -B build -DENABLE_ARTIFACT_SIGNING=ON -DSIGNING_METHOD=openssl -DSIGNING_KEY="$RUNNER_TEMP/keys/signing.key"
+          cmake --build build
+      - name: Generate SBOM
+        run: |
+          pip install --quiet -r security/requirements.txt
+          python3 security/sbom/generate_sbom.py
+      - name: Enforce the no-unsigned-binaries release gate
+        run: |
+          python3 security/release-gate/check_release_gate.py \
+            --artifact build/third_party/can-utils/candump \
+            --artifact build/third_party/can-utils/cansend \
+            --artifact build/third_party/can-utils/cangen \
+            --artifact build/third_party/can-utils/canfdtest \
+            --public-key "$RUNNER_TEMP/keys/signing.pub" \
+            --sbom security/sbom/sbom.json

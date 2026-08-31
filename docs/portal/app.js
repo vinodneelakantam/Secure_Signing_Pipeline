@@ -31,8 +31,9 @@ const OBJECTIVE_GROUPS = {
   signing: ["signing-openssl", "signing-pki"],
   jtag: ["jtag-issue", "jtag-unlock", "jtag-replay"],
   assessment: ["assessment-signature", "assessment-trust", "assessment-jtag"],
-  binarylab: ["binarylab-unsigned", "binarylab-openssl", "binarylab-pki"],
-  bootchain: ["bootchain-rom", "bootchain-bootloader", "bootchain-kernel"]
+  binarylab: ["binarylab-unsigned", "binarylab-openssl", "binarylab-pki", "binarylab-encrypted"],
+  bootchain: ["bootchain-rom", "bootchain-bootloader", "bootchain-kernel"],
+  supplychain: ["supplychain-sbom", "supplychain-sca", "supplychain-gate"]
 };
 const TOTAL_OBJECTIVES = Object.values(OBJECTIVE_GROUPS).flat().length;
 const PROGRESS_KEY = "ecu-security-range-progress";
@@ -82,6 +83,7 @@ function changeView(view) {
   document.querySelectorAll('.mission').forEach((element) => element.classList.toggle('active', element.dataset.view === view));
   window.location.hash = view;
   if (view === 'overview') completeObjective('overview-briefed', 'Briefing reviewed: trust path from build to JTAG gate.');
+  if (view === 'supplychain') completeObjective('supplychain-sbom', 'Supply Chain Ops: inspected the tracked SBOM components.');
 }
 
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => changeView(button.dataset.view)));
@@ -174,6 +176,17 @@ const LAYOUT_DATA = {
         ["signature_base64", "base64 EC signature"]
       ] }
     ]
+  },
+  encrypted: {
+    label: "On disk", title: "Encrypted artifact (confidentiality)", filecount: "1 file (replaces the plaintext)",
+    caption: "Signing proves integrity/authenticity but leaves content readable. calibration.bin.enc instead makes the content unreadable without the confidentiality key \u2014 the HMAC tag is checked, in constant time, before any AES decryption is attempted.",
+    blocks: [
+      { kind: "envelope", label: "calibration.bin.enc", sub: "JSON encryption envelope (secure-encryption-envelope/v1)", fields: [
+        ["format", "secure-encryption-envelope/v1"], ["cipher", "aes-256-cbc+hmac-sha256"],
+        ["iv_base64", "128-bit random IV"], ["ciphertext_base64", "AES-256-CBC output (opaque)"],
+        ["hmac_base64", "HMAC-SHA256 over IV||ciphertext (added for confidentiality)", true]
+      ] }
+    ]
   }
 };
 
@@ -200,9 +213,11 @@ document.querySelectorAll('[data-layout]').forEach((button) => button.addEventLi
 
 // -- Boot Chain: reference model inspired by TI TDA4x-class (Jacinto 7) secure boot. --
 const BOOT_STAGES = [
-  { id: 'rom', group: 'rom', name: 'Boot ROM', tag: 'Immutable', role: 'First code executed on power-up. Reads the boot device and an X.509-wrapped boot image before running anything else.', verifiedBy: 'Fixed silicon logic \u2014 cannot be patched or bypassed', key: 'SoC vendor root public-key hash burned into eFuse/OTP' },
+  { id: 'otp', group: 'rom', name: 'OTP / eFuse', tag: 'One-time-programmable', role: 'Non-volatile, write-once silicon memory blown at manufacture. Holds the root public-key hash, a unique device ID, and lifecycle/security-state bits (development vs. production, JTAG-disable). It cannot be erased, rewritten, or downgraded.', verifiedBy: 'Physically un-updatable once programmed \u2014 there is no software path to change it', key: 'The root-of-trust anchor: every later stage is only as trustworthy as this fuse data' },
+  { id: 'rom', group: 'rom', name: 'Boot ROM', tag: 'Immutable', role: 'First code executed on power-up. Reads the OTP-provisioned root public-key hash, then reads the boot device and an X.509-wrapped boot image before running anything else.', verifiedBy: 'Fixed silicon logic \u2014 cannot be patched or bypassed', key: 'SoC vendor root public-key hash read from OTP/eFuse' },
   { id: 'r5spl', group: 'rom', name: 'R5 SPL', tag: 'Secondary loader', role: 'Runs on the safety island (e.g. Cortex-R5F). Minimal DDR and clock bring-up, then hands off to the secure core.', verifiedBy: 'Boot ROM, using the same root-of-trust certificate chain', key: 'Same root public key / certificate chain as the ROM stage' },
-  { id: 'securecore', group: 'rom', name: 'Secure core (HSM role)', tag: 'TIFS / DMSC-class', role: 'Dedicated security microcontroller. Owns root keys and provides signature verification and crypto services to every other core over a secure message queue.', verifiedBy: 'Boot ROM', key: 'Hardware root key in on-chip secure storage \u2014 never exposed to application cores' },
+  { id: 'securecore', group: 'rom', name: 'Secure core (HSM role)', tag: 'TIFS / DMSC-class', role: 'Dedicated security microcontroller \u2014 the policy and key-custody engine. Owns root keys, decides what may be verified/decrypted, and provides those services to every other core over a secure message queue. It does not itself run the AES/SHA/ECC math \u2014 it delegates that to the crypto engine below.', verifiedBy: 'Boot ROM', key: 'Hardware root key in on-chip secure storage \u2014 never exposed to application cores' },
+  { id: 'cryptoengine', group: 'rom', name: 'Crypto engine', tag: 'Hardware accelerator (e.g. TI SA2UL-class)', role: 'A separate hardware IP block that actually executes AES-256, SHA-2, and RSA/ECC operations at silicon speed on behalf of the secure core. This is what performs the AES-256-CBC+HMAC confidentiality operations and EC signature checks modeled in this console\u2019s Signing Bay and Binary Lab.', verifiedBy: 'Access-gated by the secure core \u2014 application cores cannot reach it directly to exfiltrate key material', key: 'Loads keys per-operation from the secure core; holds no long-term key material of its own' },
   { id: 'a72spl', group: 'bootloader', name: 'A72 SPL', tag: 'Bootloader stage', role: 'Brings up DDR for the main application cores (e.g. Cortex-A72) and loads the next stage.', verifiedBy: 'Secure core / HSM', key: 'Leaf signing key from the same PKI chain used for application artifacts' },
   { id: 'uboot', group: 'bootloader', name: 'U-Boot', tag: 'Bootloader', role: 'Loads the kernel, device tree, and initramfs as a signed FIT image.', verifiedBy: "Public key compiled into U-Boot's control device tree (CONFIG_FIT_SIGNATURE)", key: "Root CA / signing public key \u2014 matches this repo's meta-uboot-secure layer" },
   { id: 'kernel', group: 'kernel', name: 'Linux kernel', tag: 'OS', role: 'Verifies signed kernel modules before loading them.', verifiedBy: 'Kernel keyring populated at build time (CONFIG_MODULE_SIG)', key: "Module signing key \u2014 demonstrated with the WireGuard module in this repo" },
@@ -223,6 +238,65 @@ function renderStageDetail(id) {
   document.querySelector('#stage-detail').innerHTML = `<div class="panel-header"><div><p class="eyebrow">${stage.tag}</p><h2>${stage.name}</h2></div></div><p class="caption">${stage.role}</p><dl><div><dt>Verified by</dt><dd>${stage.verifiedBy}</dd></div><div><dt>Key material</dt><dd>${stage.key}</dd></div></dl>`;
   completeObjective(`bootchain-${stage.group}`, `Boot Chain: traced the ${stage.name} stage.`);
 }
+
+// -- Supply Chain Ops: real SBOM components, real SCA case study, release-gate simulator. --
+const SBOM_COMPONENTS = [
+  ["can-utils", "linux-can/can-utils", "95aae6bf83ac"],
+  ["mosquitto", "eclipse/mosquitto", "714daa4174c8"],
+  ["u-boot", "u-boot/u-boot", "3f19667468fb"],
+  ["wireguard-linux-compat", "WireGuard/wireguard-linux-compat", "3d3c92b4711b"]
+];
+
+function renderSbomList() {
+  document.querySelector('#sbom-list').innerHTML = SBOM_COMPONENTS.map(([name, repo, commit]) => `<div class="layout-block layout-envelope"><strong>${name}</strong><span>pkg:github/${repo}@${commit}&hellip;</span></div>`).join('');
+}
+
+const SCA_STATES = {
+  before: {
+    caption: "security/requirements.txt pinned only cyclonedx-bom==7.3.1, letting the resolver pick the oldest transitive versions that satisfied it \u2014 both vulnerable.",
+    rows: [
+      ["idna", "3.9.0", "PYSEC-2026-215 / GHSA-65pc-fj4g-8rjx", "6.9", "3.15", "danger"],
+      ["lxml", "5.4.0", "PYSEC-2026-87 / GHSA-vfmq-68hx-4jfw (XXE)", "7.5", "6.1.0", "danger"]
+    ]
+  },
+  after: {
+    caption: "Added idna>=3.15 and lxml>=6.1.0 as explicit minimum-safe-version constraints. Re-running ./security/sca/run_sca.sh now reports \u201cNo issues found\u201d.",
+    rows: [
+      ["idna", "\u2265 3.15", "\u2014", "\u2014", "\u2014", "success"],
+      ["lxml", "\u2265 6.1.0", "\u2014", "\u2014", "\u2014", "success"]
+    ]
+  }
+};
+
+function renderSca(state) {
+  const data = SCA_STATES[state];
+  document.querySelector('#sca-caption').textContent = data.caption;
+  document.querySelector('#sca-table').innerHTML = `<div class="layout-fields">${data.rows.map(([pkg, version, advisory, cvss, fixed, tone]) => `<div class="layout-field ${tone === 'danger' ? '' : 'added'}"><code>${pkg}@${version}</code><span>${advisory}${cvss !== '\u2014' ? ` \u00b7 CVSS ${cvss} \u00b7 fixed ${fixed}` : ''}</span></div>`).join('')}</div>`;
+}
+
+document.querySelectorAll('[data-sca]').forEach((button) => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-sca]').forEach((item) => item.classList.toggle('active', item === button));
+  renderSca(button.dataset.sca);
+  completeObjective('supplychain-sca', `Supply Chain Ops: reviewed SCA state "${button.dataset.sca} fix".`);
+}));
+
+const GATE_SCENARIOS = {
+  clean: { approved: true, detail: 'candump.sig present; artifact SHA-256 matches; EC signature verifies against the pinned public key.' },
+  missing: { approved: false, detail: 'BLOCKED - no signature envelope found (candump.sig missing).' },
+  tampered: { approved: false, detail: 'BLOCKED - signature does not verify (artifact SHA-256 does not match the signed digest).' },
+  wrongkey: { approved: false, detail: 'BLOCKED - signature does not verify (EC signature invalid for the pinned public key).' },
+  corrupted: { approved: false, detail: 'BLOCKED - signature envelope is malformed (signature_base64 is not valid Base64).' }
+};
+
+document.querySelector('#run-gate').addEventListener('click', () => {
+  const scenario = document.querySelector('#gate-scenario').value;
+  const outcome = GATE_SCENARIOS[scenario];
+  const result = document.querySelector('#gate-result');
+  result.textContent = outcome.approved ? `RELEASE APPROVED: ${outcome.detail}` : `RELEASE BLOCKED: ${outcome.detail}`;
+  result.className = `gate-result ${outcome.approved ? 'approved' : 'blocked'}`;
+  completeObjective('supplychain-gate', `Supply Chain Ops: release gate ran scenario "${scenario}" -> ${outcome.approved ? 'approved' : 'blocked'}.`);
+  logEvent(outcome.approved ? 'Release gate approved a fully-verified artifact.' : `Release gate blocked an artifact: ${outcome.detail}`, outcome.approved ? 'success' : 'danger');
+});
 
 function drawTrustCanvas() {
   const canvas = document.querySelector('#trust-canvas');
@@ -279,6 +353,8 @@ renderAssessments();
 document.querySelector('#envelope-code').textContent = signingMethods.openssl.envelope;
 renderLayout('unsigned');
 renderBootStepper();
+renderSbomList();
+renderSca('before');
 drawTrustCanvas();
 renderProgress();
 tickClock();

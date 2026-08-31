@@ -33,7 +33,7 @@ The checked-in upstream projects are Git submodules under `third_party/`:
 
 | Path | Contents |
 |---|---|
-| `signing/` | Shared `sign_artifact.py` / `verify_artifact.py` CLIs, OpenSSL and PKI key generators, CMake module, Bazel macro |
+| `signing/` | Shared `sign_artifact.py` / `verify_artifact.py` CLIs, `encrypt_artifact.py` / `decrypt_artifact.py` (AES-256-CBC + HMAC-SHA256), OpenSSL/PKI/AES key generators, CMake module, Bazel macro |
 | `jtag/` | Host challenge signer, device challenge/response simulator, OpenOCD config stubs, C boot-ROM reference stub |
 | `yocto/` | `meta-secure-signing`, `meta-can-utils-secure`, `meta-mosquitto-secure`, `meta-uboot-secure`, `meta-wireguard-secure` layers |
 | `docs/portal/` | Static interactive documentation console (published via GitHub Pages) |
@@ -77,6 +77,22 @@ python3 signing/verify_artifact.py \
 
 Bazel builds use the same signer through the `signed_binary` macro in `signing/bazel/signing.bzl`,
 which wraps `cc_binary` and emits a `<name>.sig` envelope using the chosen `signing_method`.
+
+Signing proves integrity/authenticity but leaves content readable. For artifacts that must
+also stay confidential (e.g. proprietary calibration data), use the AES-256 companion:
+
+```bash
+./signing/aes/gen_confidentiality_key.sh /tmp/secure-signing-aes
+python3 signing/encrypt_artifact.py --key /tmp/secure-signing-aes/confidentiality.key \
+	--in calibration.bin --out calibration.bin.enc
+python3 signing/decrypt_artifact.py --key /tmp/secure-signing-aes/confidentiality.key \
+	--envelope calibration.bin.enc --out calibration.bin.recovered
+```
+
+Uses AES-256-CBC + HMAC-SHA256 (Encrypt-then-MAC), since OpenSSL's `enc` CLI does not support
+AEAD ciphers (`enc: AEAD ciphers not supported`); the HMAC tag is checked in constant time
+before any decryption is attempted. Recommended order: encrypt first, then sign the `.enc`
+envelope with `sign_artifact.py` so the signature also covers the exact ciphertext shipped.
 
 Run the security tests with `python3 -m unittest discover -s tests -v`.
 
@@ -126,6 +142,35 @@ python3 security/dast/fuzz_verify_artifact.py --iterations 300
 Feeds randomized artifacts, envelopes, and trust-material paths into the actual
 `verify_artifact.py` process and asserts it always fails closed (exit 0 or 1) and never
 crashes or hangs. This targets only this repository's own tooling, not external systems.
+A second fuzz harness, `python3 security/dast/fuzz_release_gate.py --iterations 300`,
+does the same for the release gate below (missing/tampered/wrong-key/corrupted signatures).
+
+**SCA** — static vulnerability check against the SBOM and pinned tooling:
+
+```bash
+./security/sca/run_sca.sh
+```
+
+Downloads a pinned OSV-Scanner release and checks `security/requirements.txt` against
+real OSV.dev advisories (this repo's own CI run has already caught and fixed a real
+transitive `lxml`/`idna` CVE this way). It also runs against `security/sbom/sbom.json` to
+show, honestly, that ecosystem SCA tools generally **cannot** resolve vulnerabilities for
+`pkg:github` submodule PURLs pinned by commit SHA — see the checklist below for how to
+close that gap.
+
+**Release gate** — the "never ship an unsigned binary" control:
+
+```bash
+python3 security/release-gate/check_release_gate.py \
+  --artifact build/third_party/can-utils/candump \
+  --public-key /tmp/secure-signing-keys/signing.pub \
+  --sbom security/sbom/sbom.json
+```
+
+Fails closed (exit 1) if any listed artifact is missing its `.sig` envelope or the
+envelope doesn't verify. Publishing an SBOM is not a substitute for this check — it
+describes what's inside a release, not whether it's trustworthy. Full checklist:
+[security/release-gate/CHECKLIST.md](security/release-gate/CHECKLIST.md).
 
 ## Continuous integration
 

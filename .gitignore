@@ -10,3 +10,4 @@ keys/
 *.pem
 !yocto/meta-secure-signing/recipes-core/signing-keys/files/*.pem
 security/sbom/sbom.json
+.tools/
