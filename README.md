@@ -2,18 +2,19 @@
 
 An automotive-oriented reference pipeline that signs genuine upstream application artifacts
 with either a raw OpenSSL key pair or a pinned-root PKI chain. It includes CMake and Bazel
-integration for `can-utils`, Yocto layer metadata for four real applications, a simulated
-one-time JTAG debug-authentication exchange, an interactive documentation portal, and
-embedded-focused SBOM/SAST/DAST tooling.
+integration for `can-utils`, Yocto layer metadata for four real applications, an AES-256
+confidentiality companion, a simulated one-time JTAG debug-authentication exchange, an
+interactive documentation portal, and embedded-focused SBOM/SAST/DAST/SCA/release-gate tooling.
 
 See [PROJECT_PROMPT.md](PROJECT_PROMPT.md) for the full design specification this repository
 implements.
 
 Open the interactive [ECU Security Range](docs/portal/index.html) — a game-style simulation
-console with a mission rail (Briefing, Signing Bay, JTAG Range, Red Team Ops), a live mission
-console log, and a trust-score/objective system, all wired to the same accurate technical
-content: trust path, signing methods, JTAG challenge-response, and the security assessment
-checks.
+console with an 8-mission rail (Briefing, Signing Bay, JTAG Range, Red Team Ops, Binary Lab,
+Boot Chain, Supply Chain Ops, Interview Bank), a live mission console log, and a
+trust-score/objective system, all wired to the same accurate technical content: trust path,
+signing methods, JTAG challenge-response, on-disk binary layouts, the TF-A/TIFS boot chain,
+SBOM/SCA/release-gate supply-chain controls, and a searchable 100+ item interview bank.
 
 ## Published documentation
 
@@ -38,8 +39,8 @@ The checked-in upstream projects are Git submodules under `third_party/`:
 | `yocto/` | `meta-secure-signing`, `meta-can-utils-secure`, `meta-mosquitto-secure`, `meta-uboot-secure`, `meta-wireguard-secure` layers |
 | `docs/portal/` | Static interactive documentation console (published via GitHub Pages) |
 | `pentest/` | Authorized repository-local adversarial test runner |
-| `security/` | SBOM generator, SAST runner, DAST fuzz harness |
-| `tests/` | Signing round-trip, JTAG challenge-response, and adversarial security tests |
+| `security/` | SBOM generator, SAST runner, SCA scanner, DAST fuzz harnesses, release gate + checklist |
+| `tests/` | Signing round-trip, encryption round-trip, JTAG challenge-response, and adversarial security tests |
 | `third_party/` | Pinned upstream application submodules |
 
 ## Quick start
@@ -110,8 +111,9 @@ certificate/key mismatch, artifact tampering, and JTAG challenge replay are reje
 
 ## Embedded DevSecOps tooling
 
-`security/` adds three practices commonly required for embedded/automotive supply-chain
-security. All three run in CI on every push via `.github/workflows/security-scans.yml`.
+`security/` adds five practices commonly required for embedded/automotive supply-chain
+security: SBOM, SAST, DAST, SCA, and a release gate. All five run in CI on every push via
+`.github/workflows/security-scans.yml`.
 
 **SBOM** — CycloneDX bill of materials for this repository and its pinned upstream sources:
 
@@ -177,8 +179,11 @@ describes what's inside a release, not whether it's trustworthy. Full checklist:
 Three workflows run under `.github/workflows/`:
 
 - `secure-pipeline.yml`: builds signed `can-utils` binaries across the OpenSSL/PKI matrix and
-  runs the signing/JTAG test suite.
-- `security-scans.yml`: generates the SBOM, runs SAST, and runs the DAST fuzz harness.
+  runs the full test suite (signing, encryption, JTAG, and adversarial tests).
+- `security-scans.yml`: five jobs — `sbom` (generate + upload CycloneDX SBOM), `sast`
+  (Bandit + cppcheck), `sca` (OSV-Scanner against pinned tooling and the SBOM), `dast`
+  (fuzzes the verifier and the release gate), and `release-gate` (builds, signs, and enforces
+  the no-unsigned-binaries gate on real `can-utils` artifacts).
 - `deploy-docs.yml`: publishes `docs/portal` to GitHub Pages on pushes to `main`.
 
 ## Security boundary

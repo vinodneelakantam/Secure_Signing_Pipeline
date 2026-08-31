@@ -21,7 +21,9 @@ const assessments = [
   ["trust", "Untrusted Root CA", "A leaf certificate that chains to a different Root CA is tested against the pinned root.", "Chain validation rejects"],
   ["trust", "Leaf key mismatch", "The signer checks that the provided private key matches the PKI leaf certificate.", "Signing rejects"],
   ["jtag", "Nonce replay", "A previously accepted signed challenge is presented after the target has consumed it.", "Session stays locked"],
-  ["jtag", "Wrong challenge", "A response that signs different nonce bytes is presented to the target.", "Session stays locked"]
+  ["jtag", "Wrong challenge", "A response that signs different nonce bytes is presented to the target.", "Session stays locked"],
+  ["encryption", "Ciphertext tampering", "A single bit is flipped in the AES-256-CBC ciphertext after encryption, before decryption is attempted.", "HMAC check rejects"],
+  ["encryption", "Wrong confidentiality key", "Decryption is attempted with a different, unrelated AES+HMAC key pair.", "HMAC check rejects"]
 ];
 
 // -- Mission progress: client-side only, no data ever leaves this page. --
@@ -30,10 +32,11 @@ const OBJECTIVE_GROUPS = {
   overview: ["overview-briefed"],
   signing: ["signing-openssl", "signing-pki"],
   jtag: ["jtag-issue", "jtag-unlock", "jtag-replay"],
-  assessment: ["assessment-signature", "assessment-trust", "assessment-jtag"],
+  assessment: ["assessment-signature", "assessment-trust", "assessment-jtag", "assessment-encryption"],
   binarylab: ["binarylab-unsigned", "binarylab-openssl", "binarylab-pki", "binarylab-encrypted"],
   bootchain: ["bootchain-rom", "bootchain-bootloader", "bootchain-kernel"],
-  supplychain: ["supplychain-sbom", "supplychain-sca", "supplychain-gate"]
+  supplychain: ["supplychain-sbom", "supplychain-sca", "supplychain-gate"],
+  interviewbank: ["interviewbank-qa", "interviewbank-adr", "interviewbank-search"]
 };
 const TOTAL_OBJECTIVES = Object.values(OBJECTIVE_GROUPS).flat().length;
 const PROGRESS_KEY = "ecu-security-range-progress";
@@ -84,6 +87,7 @@ function changeView(view) {
   window.location.hash = view;
   if (view === 'overview') completeObjective('overview-briefed', 'Briefing reviewed: trust path from build to JTAG gate.');
   if (view === 'supplychain') completeObjective('supplychain-sbom', 'Supply Chain Ops: inspected the tracked SBOM components.');
+  if (view === 'interviewbank') completeObjective('interviewbank-qa', 'Interview Bank: browsed the Technical Q&A bank.');
 }
 
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => changeView(button.dataset.view)));
@@ -216,10 +220,11 @@ const BOOT_STAGES = [
   { id: 'otp', group: 'rom', name: 'OTP / eFuse', tag: 'One-time-programmable', role: 'Non-volatile, write-once silicon memory blown at manufacture. Holds the root public-key hash, a unique device ID, and lifecycle/security-state bits (development vs. production, JTAG-disable). It cannot be erased, rewritten, or downgraded.', verifiedBy: 'Physically un-updatable once programmed \u2014 there is no software path to change it', key: 'The root-of-trust anchor: every later stage is only as trustworthy as this fuse data' },
   { id: 'rom', group: 'rom', name: 'Boot ROM', tag: 'Immutable', role: 'First code executed on power-up. Reads the OTP-provisioned root public-key hash, then reads the boot device and an X.509-wrapped boot image before running anything else.', verifiedBy: 'Fixed silicon logic \u2014 cannot be patched or bypassed', key: 'SoC vendor root public-key hash read from OTP/eFuse' },
   { id: 'r5spl', group: 'rom', name: 'R5 SPL', tag: 'Secondary loader', role: 'Runs on the safety island (e.g. Cortex-R5F). Minimal DDR and clock bring-up, then hands off to the secure core.', verifiedBy: 'Boot ROM, using the same root-of-trust certificate chain', key: 'Same root public key / certificate chain as the ROM stage' },
-  { id: 'securecore', group: 'rom', name: 'Secure core (HSM role)', tag: 'TIFS / DMSC-class', role: 'Dedicated security microcontroller \u2014 the policy and key-custody engine. Owns root keys, decides what may be verified/decrypted, and provides those services to every other core over a secure message queue. It does not itself run the AES/SHA/ECC math \u2014 it delegates that to the crypto engine below.', verifiedBy: 'Boot ROM', key: 'Hardware root key in on-chip secure storage \u2014 never exposed to application cores' },
+  { id: 'securecore', group: 'rom', name: 'Secure core (HSM role)', tag: 'TIFS / DMSC-class', role: 'Dedicated security microcontroller (TI calls this TIFS \u2014 TI Foundational Security \u2014 the evolution of the K3 architecture\u2019s DMSC, Device Manager and Security Controller). It is the policy and key-custody engine: owns root keys, authenticates and unlocks the R5/A72 boot images, brokers power/clock/resource management for the rest of the SoC, and talks to other cores over a dedicated secure hardware messaging path (TI\u2019s Secure Proxy) rather than shared memory. It does not itself run the AES/SHA/ECC math \u2014 it delegates that to the crypto engine below.', verifiedBy: 'Boot ROM', key: 'Hardware root key in on-chip secure storage \u2014 never exposed to application cores' },
   { id: 'cryptoengine', group: 'rom', name: 'Crypto engine', tag: 'Hardware accelerator (e.g. TI SA2UL-class)', role: 'A separate hardware IP block that actually executes AES-256, SHA-2, and RSA/ECC operations at silicon speed on behalf of the secure core. This is what performs the AES-256-CBC+HMAC confidentiality operations and EC signature checks modeled in this console\u2019s Signing Bay and Binary Lab.', verifiedBy: 'Access-gated by the secure core \u2014 application cores cannot reach it directly to exfiltrate key material', key: 'Loads keys per-operation from the secure core; holds no long-term key material of its own' },
   { id: 'a72spl', group: 'bootloader', name: 'A72 SPL', tag: 'Bootloader stage', role: 'Brings up DDR for the main application cores (e.g. Cortex-A72) and loads the next stage.', verifiedBy: 'Secure core / HSM', key: 'Leaf signing key from the same PKI chain used for application artifacts' },
-  { id: 'uboot', group: 'bootloader', name: 'U-Boot', tag: 'Bootloader', role: 'Loads the kernel, device tree, and initramfs as a signed FIT image.', verifiedBy: "Public key compiled into U-Boot's control device tree (CONFIG_FIT_SIGNATURE)", key: "Root CA / signing public key \u2014 matches this repo's meta-uboot-secure layer" },
+  { id: 'tfa', group: 'bootloader', name: 'TF-A (BL31)', tag: 'ARM Trusted Firmware-A', role: 'Trusted Firmware-A is ARM\u2019s open-source reference implementation of Armv8-A secure-world firmware (stages BL1/BL2/BL31/BL32/BL33). On Jacinto-class SoCs it runs as BL31 on the main Cortex-A72 cluster: the EL3 secure monitor that provides PSCI power-state management and routes SMC calls between the non-secure world (U-Boot/Linux) and secure firmware such as the secure core.', verifiedBy: 'A72 SPL, continuing the same certificate chain rooted in OTP', key: 'Same PKI leaf/Root CA chain as the rest of this boot sequence' },
+  { id: 'uboot', group: 'bootloader', name: 'U-Boot', tag: 'Bootloader (BL33)', role: 'Loads the kernel, device tree, and initramfs as a signed FIT image. In ARM Trusted Firmware terms this is the BL33 non-secure-world bootloader stage, launched by TF-A.', verifiedBy: "Public key compiled into U-Boot's control device tree (CONFIG_FIT_SIGNATURE)", key: "Root CA / signing public key \u2014 matches this repo's meta-uboot-secure layer" },
   { id: 'kernel', group: 'kernel', name: 'Linux kernel', tag: 'OS', role: 'Verifies signed kernel modules before loading them.', verifiedBy: 'Kernel keyring populated at build time (CONFIG_MODULE_SIG)', key: "Module signing key \u2014 demonstrated with the WireGuard module in this repo" },
   { id: 'jtag', group: 'kernel', name: 'JTAG debug gate', tag: 'Parallel path', role: 'Not part of the linear boot chain. Disabled by default; a debug host must sign a fresh device nonce to unlock one session.', verifiedBy: 'Secure core / boot ROM trust anchor', key: 'Same signing key material \u2014 see the JTAG Range mission' }
 ];
@@ -298,6 +303,40 @@ document.querySelector('#run-gate').addEventListener('click', () => {
   logEvent(outcome.approved ? 'Release gate approved a fully-verified artifact.' : `Release gate blocked an artifact: ${outcome.detail}`, outcome.approved ? 'success' : 'danger');
 });
 
+// -- Interview Bank: 50 Q&A + 50 architecture decisions, defined in interview-bank.js. --
+let bankMode = "qa";
+
+function bankItemMatches(item, query, category) {
+  if (category !== "all" && item.category !== category) return false;
+  if (!query) return true;
+  const haystack = bankMode === "qa" ? `${item.question} ${item.answer}` : `${item.title} ${item.decision} ${item.rationale} ${item.consequence}`;
+  return haystack.toLowerCase().includes(query);
+}
+
+function renderBank() {
+  const query = document.querySelector('#bank-search').value.trim().toLowerCase();
+  const category = document.querySelector('#bank-category').value;
+  const source = bankMode === "qa" ? INTERVIEW_QUESTIONS : ARCHITECTURE_DECISIONS;
+  const matches = source.filter((item) => bankItemMatches(item, query, category));
+
+  document.querySelector('#bank-count').textContent = `${matches.length} / ${source.length} items`;
+  document.querySelector('#bank-list').innerHTML = matches.map((item) => bankMode === "qa"
+    ? `<article class="panel bank-card"><code>${item.category}</code><h2>${item.question}</h2><p>${item.answer}</p></article>`
+    : `<article class="panel bank-card"><code>${item.category}</code><h2>${item.title}</h2><dl><div><dt>Decision</dt><dd>${item.decision}</dd></div><div><dt>Rationale</dt><dd>${item.rationale}</dd></div><div><dt>Consequence</dt><dd>${item.consequence}</dd></div></dl></article>`
+  ).join('');
+
+  if (query || category !== "all") completeObjective('interviewbank-search', 'Interview Bank: used search/category filtering.');
+}
+
+document.querySelectorAll('[data-bank]').forEach((button) => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-bank]').forEach((item) => item.classList.toggle('active', item === button));
+  bankMode = button.dataset.bank;
+  renderBank();
+  completeObjective(bankMode === "qa" ? 'interviewbank-qa' : 'interviewbank-adr', `Interview Bank: browsed ${bankMode === "qa" ? "Technical Q&A" : "Architecture Decisions"}.`);
+}));
+document.querySelector('#bank-search').addEventListener('input', renderBank);
+document.querySelector('#bank-category').addEventListener('change', renderBank);
+
 function drawTrustCanvas() {
   const canvas = document.querySelector('#trust-canvas');
   const context = canvas.getContext('2d');
@@ -319,6 +358,60 @@ document.querySelector('#console-toggle').addEventListener('click', () => {
   const collapsed = dock.classList.toggle('collapsed');
   document.querySelector('#console-toggle').setAttribute('aria-expanded', String(!collapsed));
 });
+
+// -- Mission console resize: drag the handle (mouse or touch) to expand/shrink the log. --
+const CONSOLE_HEIGHT_KEY = "ecu-security-range-console-height";
+const CONSOLE_DEFAULT_HEIGHT = 120;
+const CONSOLE_MIN_HEIGHT = 80;
+const CONSOLE_MAX_HEIGHT = 420;
+
+function setConsoleHeight(height) {
+  const clamped = Math.min(CONSOLE_MAX_HEIGHT, Math.max(CONSOLE_MIN_HEIGHT, height));
+  document.querySelector('#console-log').style.height = `${clamped}px`;
+  localStorage.setItem(CONSOLE_HEIGHT_KEY, String(clamped));
+}
+
+(() => {
+  const storedHeight = parseInt(localStorage.getItem(CONSOLE_HEIGHT_KEY), 10);
+  setConsoleHeight(Number.isFinite(storedHeight) ? storedHeight : CONSOLE_DEFAULT_HEIGHT);
+})();
+
+let consoleDragStartY = 0;
+let consoleDragStartHeight = 0;
+
+function pointerY(event) {
+  return event.touches ? event.touches[0].clientY : event.clientY;
+}
+
+function onConsoleDragMove(event) {
+  event.preventDefault();
+  setConsoleHeight(consoleDragStartHeight + (consoleDragStartY - pointerY(event)));
+}
+
+function onConsoleDragEnd() {
+  document.removeEventListener('mousemove', onConsoleDragMove);
+  document.removeEventListener('mouseup', onConsoleDragEnd);
+  document.removeEventListener('touchmove', onConsoleDragMove);
+  document.removeEventListener('touchend', onConsoleDragEnd);
+  document.querySelector('#console-resize').classList.remove('active');
+  document.querySelector('#console-dock').classList.remove('resizing');
+}
+
+function onConsoleDragStart(event) {
+  event.preventDefault();
+  consoleDragStartY = pointerY(event);
+  consoleDragStartHeight = document.querySelector('#console-log').getBoundingClientRect().height;
+  document.querySelector('#console-resize').classList.add('active');
+  document.querySelector('#console-dock').classList.add('resizing');
+  document.addEventListener('mousemove', onConsoleDragMove);
+  document.addEventListener('mouseup', onConsoleDragEnd);
+  document.addEventListener('touchmove', onConsoleDragMove, { passive: false });
+  document.addEventListener('touchend', onConsoleDragEnd);
+}
+
+document.querySelector('#console-resize').addEventListener('mousedown', onConsoleDragStart);
+document.querySelector('#console-resize').addEventListener('touchstart', onConsoleDragStart, { passive: false });
+document.querySelector('#console-resize').addEventListener('dblclick', () => setConsoleHeight(CONSOLE_DEFAULT_HEIGHT));
 
 function tickClock() {
   document.querySelector('#sim-clock').textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -355,6 +448,7 @@ renderLayout('unsigned');
 renderBootStepper();
 renderSbomList();
 renderSca('before');
+renderBank();
 drawTrustCanvas();
 renderProgress();
 tickClock();

@@ -22,7 +22,7 @@
   <header class="hud-bar">
     <div class="hud-brand">ECU Security Range<span>Secure Signing Pipeline</span></div>
     <div class="hud-readouts">
-      <div class="readout"><label>Trust score</label><span id="trust-score">0<small>/90 XP</small></span></div>
+      <div class="readout"><label>Trust score</label><span id="trust-score">0<small>/230 XP</small></span></div>
       <div class="readout"><label>Gate status</label><span id="gate-status" class="pill locked">Locked</span></div>
       <div class="readout"><label>Range clock</label><span id="sim-clock">00:00:00</span></div>
     </div>
@@ -37,6 +37,7 @@
       <button class="mission" data-view="binarylab"><span class="mission-index">05</span><span class="mission-name">Binary Lab</span><span class="mission-check" id="check-binarylab"></span></button>
       <button class="mission" data-view="bootchain"><span class="mission-index">06</span><span class="mission-name">Boot Chain</span><span class="mission-check" id="check-bootchain"></span></button>
       <button class="mission" data-view="supplychain"><span class="mission-index">07</span><span class="mission-name">Supply Chain Ops</span><span class="mission-check" id="check-supplychain"></span></button>
+      <button class="mission" data-view="interviewbank"><span class="mission-index">08</span><span class="mission-name">Interview Bank</span><span class="mission-check" id="check-interviewbank"></span></button>
     </nav>
 
     <main>
@@ -131,7 +132,7 @@
 
       <section class="view" id="assessment">
         <div class="section-heading compact"><p class="eyebrow">Mission 04 &middot; Authorized local assessment</p><h1>Red Team Ops</h1><p class="lede">The test lane attacks repository-owned trust boundaries only. Every scenario below must fail closed.</p></div>
-        <div class="assessment-toolbar"><div class="filter-group" role="group" aria-label="Assessment filters"><button class="filter active" data-filter="all">All checks</button><button class="filter" data-filter="signature">Signature</button><button class="filter" data-filter="trust">PKI trust</button><button class="filter" data-filter="jtag">JTAG</button></div><code>./pentest/run_security_checks.sh</code></div>
+        <div class="assessment-toolbar"><div class="filter-group" role="group" aria-label="Assessment filters"><button class="filter active" data-filter="all">All checks</button><button class="filter" data-filter="signature">Signature</button><button class="filter" data-filter="trust">PKI trust</button><button class="filter" data-filter="jtag">JTAG</button><button class="filter" data-filter="encryption">Encryption</button></div><code>./pentest/run_security_checks.sh</code></div>
         <div class="test-grid" id="test-grid"></div>
         <div class="signing-grid signing-grid-lower">
           <section class="panel assessment-footer"><div><p class="eyebrow">Scope boundary</p><h2>Designed for repeatable, authorized validation</h2></div><p>These checks use temporary keys and local files. They do not discover, scan, or interact with external hosts, networks, or devices.</p></section>
@@ -141,6 +142,7 @@
               <li data-objective="assessment-signature"><span class="box"></span>Review signature-forging attempts</li>
               <li data-objective="assessment-trust"><span class="box"></span>Review PKI trust attacks</li>
               <li data-objective="assessment-jtag"><span class="box"></span>Review JTAG attack cases</li>
+              <li data-objective="assessment-encryption"><span class="box"></span>Review AES encryption attacks</li>
             </ul>
           </aside>
         </div>
@@ -186,6 +188,14 @@
             </ul>
           </aside>
         </div>
+        <section class="panel protocol-notes">
+          <p class="eyebrow">Naming clarification</p><h2>TF-A vs. TF-M vs. TIFS &mdash; not the same thing</h2>
+          <dl>
+            <div><dt>TF-A (Trusted Firmware-A)</dt><dd>ARM's open-source reference firmware for Armv8-A application-class cores (BL1/BL2/BL31/BL32/BL33). Runs as BL31 on the Cortex-A72 cluster in this model &mdash; the EL3 secure monitor providing PSCI and SMC routing. Industry-standard, used across many vendors' SoCs, not TI-specific.</dd></div>
+            <div><dt>TF-M (Trusted Firmware-M)</dt><dd>ARM's separate, PSA-Certified open-source reference firmware for Armv8-M Cortex-M cores &mdash; a generic secure-partition runtime for constrained microcontrollers. It does <strong>not</strong> appear in this Jacinto-class boot chain; it's mentioned here only to avoid confusing it with TIFS below.</dd></div>
+            <div><dt>TIFS (TI Foundational Security)</dt><dd>TI's own, SoC-specific security firmware (the evolution of the K3 architecture's DMSC), modeled as the "Secure core (HSM role)" stage above. It plays a similar architectural <em>role</em> to what TF-M provides on other platforms, but TIFS is not built on or derived from TF-M &mdash; they are separate projects.</dd></div>
+          </dl>
+        </section>
         <p class="caption reference-note">Reference model inspired by TI TDA4x-class (Jacinto 7) secure boot architecture. Stage names and roles illustrate the general industry pattern &mdash; ROM, secure core/HSM, SPL, bootloader, kernel &mdash; and are not a verbatim reproduction of proprietary implementation details.</p>
       </section>
 
@@ -242,13 +252,49 @@
         </section>
         <p class="caption reference-note">Checklist: <code>security/release-gate/CHECKLIST.md</code>. Fuzz case study: <code>security/dast/fuzz_release_gate.py</code> &mdash; 300/300 randomized adversarial scenarios matched the expected pass/block outcome.</p>
       </section>
+
+      <section class="view" id="interviewbank">
+        <div class="section-heading compact"><p class="eyebrow">Mission 08 &middot; Knowledge base</p><h1>Interview Bank</h1><p class="lede">53 technical Q&amp;A and 52 architecture decisions, grounded in what this repository actually implements &mdash; searchable and filterable by topic.</p></div>
+        <div class="method-toggle" role="tablist" aria-label="Bank content">
+          <button class="method active" role="tab" data-bank="qa">Technical Q&amp;A (53)</button>
+          <button class="method" role="tab" data-bank="adr">Architecture Decisions (52)</button>
+        </div>
+        <div class="bank-toolbar">
+          <input type="search" id="bank-search" placeholder="Search questions, answers, decisions..." aria-label="Search interview bank">
+          <select id="bank-category" aria-label="Filter by category">
+            <option value="all">All categories</option>
+            <option value="crypto">Crypto fundamentals</option>
+            <option value="signing">Signing pipeline</option>
+            <option value="pki">PKI</option>
+            <option value="jtag">Secure JTAG</option>
+            <option value="buildsystems">Build systems</option>
+            <option value="supplychain">Supply chain</option>
+            <option value="secops">SAST/DAST/pentest</option>
+            <option value="boot">Boot chain</option>
+            <option value="gui">Documentation GUI</option>
+            <option value="process">Engineering process</option>
+          </select>
+          <span class="chip" id="bank-count">50 items</span>
+        </div>
+        <div class="bank-list" id="bank-list"></div>
+        <aside class="panel objectives-panel" data-group="interviewbank">
+          <p class="eyebrow">Mission objectives</p><h2>Interview Bank tasks</h2>
+          <ul>
+            <li data-objective="interviewbank-qa"><span class="box"></span>Browse the Technical Q&amp;A bank</li>
+            <li data-objective="interviewbank-adr"><span class="box"></span>Browse the Architecture Decisions</li>
+            <li data-objective="interviewbank-search"><span class="box"></span>Search or filter by category</li>
+          </ul>
+        </aside>
+      </section>
     </main>
   </div>
 
-  <footer class="console-dock">
+  <footer class="console-dock" id="console-dock">
+    <div class="console-resize-handle" id="console-resize" title="Drag to resize, double-click to reset" role="separator" aria-orientation="horizontal" aria-label="Resize mission console"></div>
     <div class="console-header"><span>Mission console</span><button id="console-toggle" aria-label="Toggle console" aria-expanded="true">_</button></div>
     <div class="console-body" id="console-log"></div>
   </footer>
+  <script src="interview-bank.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
