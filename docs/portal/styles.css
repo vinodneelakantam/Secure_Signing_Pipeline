@@ -65,6 +65,10 @@ main { flex:1; max-width:1240px; padding:44px 4vw 70px; }.view { display:none; a
 .console-body { height:120px; min-height:80px; max-height:70vh; padding:0 5vw 10px; overflow:auto; font:11px/1.8 'DM Mono',monospace; }
 .console-dock.collapsed .console-body,.console-dock.collapsed .console-resize-handle { display:none; }
 .log-line { color:var(--muted); }.log-line .time { color:var(--cyan); margin-right:8px; }.log-line.success{color:var(--green)}.log-line.warn{color:var(--gold)}.log-line.danger{color:var(--red)}
+.site-signature { padding:10px 5vw; color:var(--muted); background:rgba(6,10,14,.94); border-top:1px solid var(--line); font:500 11px 'DM Mono',monospace; text-align:center; }
+.site-signature strong { color:var(--ink); }
+.site-signature a { color:var(--cyan); text-decoration:none; }
+.site-signature a:hover { text-decoration:underline; }
 
 @media (max-width:900px) { .hud-bar { padding:0 20px; gap:12px; } .hud-readouts { gap:14px; } .readout span { font-size:12px; } .range { flex-direction:column; } .mission-rail { flex-direction:row; position:static; height:auto; width:100%; overflow-x:auto; border-right:0; border-bottom:1px solid var(--line); } .mission { flex:0 0 auto; } main { padding:30px 20px 48px; } h1 { font-size:32px; } .overview-grid,.signing-grid,.jtag-grid,.signing-grid-lower { grid-template-columns:1fr; } .test-grid { grid-template-columns:1fr 1fr; } .bank-list { grid-template-columns:1fr; } .integration-strip { grid-template-columns:1fr; } .integration-strip div { border-right:0; border-bottom:1px solid var(--line); } .integration-strip div:last-child { border-bottom:0; } .protocol-track { grid-template-columns:100px 1fr 100px; } .endpoint span { display:none; } .assessment-toolbar { align-items:flex-start; gap:14px; flex-direction:column; } .filter-group { flex-wrap:wrap; } .console-header,.console-body { padding-left:20px; padding-right:20px; } }
 @media (max-width:520px) { .test-grid { grid-template-columns:1fr; } dl div { grid-template-columns:110px 1fr; } .hud-readouts .readout.clock { display:none; } }
