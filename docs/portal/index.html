@@ -3,95 +3,152 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Interactive documentation for the secure signing and JTAG pipeline.">
-  <title>Secure Pipeline Console</title>
+  <meta name="description" content="Interactive ECU security range: simulate binary signing trust models and secure JTAG debug authentication.">
+  <title>ECU Security Range | Secure Signing &amp; JTAG Simulator</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#overview">Secure Pipeline <span>Console</span></a>
-    <nav aria-label="Documentation sections">
-      <button class="nav-link active" data-view="overview">Overview</button>
-      <button class="nav-link" data-view="signing">Binary signing</button>
-      <button class="nav-link" data-view="jtag">Secure JTAG</button>
-      <button class="nav-link" data-view="assessment">Security assessment</button>
-    </nav>
-    <div class="environment"><span class="status-dot"></span> Development reference</div>
+  <div class="boot-overlay" id="boot-overlay">
+    <div class="boot-frame">
+      <p class="boot-tag">SECURE GATEWAY SIMULATOR</p>
+      <h1>ECU Security Range</h1>
+      <p class="boot-sub">Automotive signing trust and JTAG debug-authentication range, built on the real pipeline in this repository.</p>
+      <div class="boot-bar"><span id="boot-fill"></span></div>
+      <pre class="boot-log" id="boot-log"></pre>
+      <button class="command primary" id="enter-range" disabled>Enter simulation</button>
+    </div>
+  </div>
+
+  <header class="hud-bar">
+    <div class="hud-brand">ECU Security Range<span>Secure Signing Pipeline</span></div>
+    <div class="hud-readouts">
+      <div class="readout"><label>Trust score</label><span id="trust-score">0<small>/90 XP</small></span></div>
+      <div class="readout"><label>Gate status</label><span id="gate-status" class="pill locked">Locked</span></div>
+      <div class="readout"><label>Range clock</label><span id="sim-clock">00:00:00</span></div>
+    </div>
   </header>
 
-  <main>
-    <section class="view active" id="overview">
-      <div class="section-heading">
-        <p class="eyebrow">Automotive Yocto security path</p>
-        <h1>Trust every artifact.<br>Gate every debug session.</h1>
-        <p class="lede">An executable reference for signing real automotive Linux components, pinning their trust roots, and modelling authenticated JTAG access.</p>
-      </div>
-      <div class="overview-grid">
-        <section class="architecture panel" aria-labelledby="architecture-title">
-          <div class="panel-header">
-            <div><p class="eyebrow">Live model</p><h2 id="architecture-title">Trust path</h2></div>
-            <span class="chip">Pinned root</span>
-          </div>
-          <canvas id="trust-canvas" width="900" height="390" aria-label="Architecture diagram showing build, signing, verification, Yocto image, and debug authentication"></canvas>
-          <div class="legend"><span><i class="legend-build"></i> Build output</span><span><i class="legend-trust"></i> Trusted verification</span><span><i class="legend-debug"></i> Debug authentication</span></div>
-        </section>
-        <aside class="scope panel">
-          <p class="eyebrow">Integrated sources</p>
-          <h2>Four artifact classes</h2>
-          <ul class="source-list">
-            <li><strong>can-utils</strong><span>SocketCAN CLI binaries</span></li>
-            <li><strong>Mosquitto</strong><span>MQTT service daemon</span></li>
-            <li><strong>U-Boot</strong><span>FIT-signed boot image</span></li>
-            <li><strong>WireGuard</strong><span>Out-of-tree kernel module</span></li>
-          </ul>
-          <button class="command" data-view="signing">Inspect signing paths</button>
-        </aside>
-      </div>
-    </section>
+  <div class="range">
+    <nav class="mission-rail" aria-label="Mission select">
+      <button class="mission active" data-view="overview"><span class="mission-index">01</span><span class="mission-name">Briefing</span><span class="mission-check" id="check-overview"></span></button>
+      <button class="mission" data-view="signing"><span class="mission-index">02</span><span class="mission-name">Signing Bay</span><span class="mission-check" id="check-signing"></span></button>
+      <button class="mission" data-view="jtag"><span class="mission-index">03</span><span class="mission-name">JTAG Range</span><span class="mission-check" id="check-jtag"></span></button>
+      <button class="mission" data-view="assessment"><span class="mission-index">04</span><span class="mission-name">Red Team Ops</span><span class="mission-check" id="check-assessment"></span></button>
+    </nav>
 
-    <section class="view" id="signing">
-      <div class="section-heading compact"><p class="eyebrow">Artifact assurance</p><h1>Binary signing</h1><p class="lede">One envelope format, two trust models, and the same verification behavior in CMake, Bazel, and Yocto.</p></div>
-      <div class="method-toggle" role="tablist" aria-label="Signing method">
-        <button class="method active" role="tab" data-method="openssl">OpenSSL key pair</button>
-        <button class="method" role="tab" data-method="pki">PKI certificate chain</button>
-      </div>
-      <div class="signing-grid">
-        <section class="panel method-detail">
-          <p class="eyebrow" id="method-label">Development signing</p>
-          <h2 id="method-title">Direct key-pair trust</h2>
-          <p id="method-copy">A P-256 private key signs the SHA-256 digest. The verifier receives a separately provisioned public key and accepts only a matching signature.</p>
-          <dl id="method-facts"><div><dt>Signer material</dt><dd>Private EC P-256 key</dd></div><div><dt>Verifier anchor</dt><dd>Explicit public key</dd></div><div><dt>Use case</dt><dd>Local builds and CI smoke tests</dd></div></dl>
-        </section>
-        <section class="panel envelope">
-          <div class="panel-header"><div><p class="eyebrow">Detached signature</p><h2>Envelope contents</h2></div><span class="chip">JSON v1</span></div>
-          <pre id="envelope-code"></pre>
-          <p class="caption">The artifact itself is never modified. Its digest and signature travel as a portable adjacent <code>.sig</code> envelope.</p>
-        </section>
-      </div>
-      <section class="integration-strip" aria-label="Build integrations"><div><span>01</span><strong>CMake</strong><p>Signs selected can-utils targets after build.</p></div><div><span>02</span><strong>Bazel</strong><p>Uses the reusable <code>signed_binary</code> macro.</p></div><div><span>03</span><strong>Yocto</strong><p>Signs image and package artifacts from protected configuration.</p></div><div><span>04</span><strong>Target</strong><p>Pins only public trust material in the image.</p></div></section>
-    </section>
+    <main>
+      <section class="view active" id="overview">
+        <div class="section-heading">
+          <p class="eyebrow">Mission 01 &middot; Automotive Yocto security path</p>
+          <h1>Trust every artifact.<br>Gate every debug session.</h1>
+          <p class="lede">An executable range for signing real automotive Linux components, pinning their trust roots, and rehearsing authenticated JTAG access.</p>
+        </div>
+        <div class="overview-grid">
+          <section class="architecture panel" aria-labelledby="architecture-title">
+            <div class="panel-header">
+              <div><p class="eyebrow">Live model</p><h2 id="architecture-title">Trust path</h2></div>
+              <span class="chip">Pinned root</span>
+            </div>
+            <canvas id="trust-canvas" width="900" height="390" aria-label="Architecture diagram showing build, signing, verification, Yocto image, and debug authentication"></canvas>
+            <div class="legend"><span><i class="legend-build"></i> Build output</span><span><i class="legend-trust"></i> Trusted verification</span><span><i class="legend-debug"></i> Debug authentication</span></div>
+          </section>
+          <aside class="scope panel">
+            <p class="eyebrow">Integrated sources</p>
+            <h2>Four artifact classes</h2>
+            <ul class="source-list">
+              <li><strong>can-utils</strong><span>SocketCAN CLI binaries</span></li>
+              <li><strong>Mosquitto</strong><span>MQTT service daemon</span></li>
+              <li><strong>U-Boot</strong><span>FIT-signed boot image</span></li>
+              <li><strong>WireGuard</strong><span>Out-of-tree kernel module</span></li>
+            </ul>
+            <button class="command" data-view="signing">Advance to Signing Bay</button>
+            <div class="objectives" data-group="overview">
+              <p class="eyebrow">Mission objective</p>
+              <ul><li data-objective="overview-briefed"><span class="box"></span>Review the trust path briefing</li></ul>
+            </div>
+          </aside>
+        </div>
+      </section>
 
-    <section class="view" id="jtag">
-      <div class="section-heading compact"><p class="eyebrow">Debug authentication</p><h1>Secure JTAG session</h1><p class="lede">The target starts locked. A host must prove possession of trusted signing material over a fresh, one-time device challenge.</p></div>
-      <div class="jtag-grid">
-        <section class="panel simulator">
-          <div class="panel-header"><div><p class="eyebrow">Interactive protocol model</p><h2>Challenge response</h2></div><span class="chip" id="jtag-state">Locked</span></div>
-          <div class="protocol-track"><div class="endpoint"><b>Target</b><span>Boot ROM / enclave</span></div><div class="protocol-line" id="protocol-line"><span id="protocol-event">No session challenge issued</span></div><div class="endpoint host"><b>Debug host</b><span>OpenOCD + signer</span></div></div>
-          <div class="nonce-box"><span>Pending nonce</span><code id="nonce-value">-- no active nonce --</code></div>
-          <div class="sim-controls"><button class="command primary" id="issue-nonce">Issue nonce</button><button class="command" id="submit-response" disabled>Present signed response</button><button class="command danger" id="replay-response" disabled>Replay prior response</button></div>
-        </section>
-        <aside class="panel protocol-notes"><p class="eyebrow">Hardware boundary</p><h2>What protects the port</h2><ol><li>Secure firmware creates 32 random bytes.</li><li>The host signs exactly those bytes.</li><li>Boot ROM validates against pinned trust.</li><li>Unlock applies to one debug session only.</li></ol><p class="warning">The repository C stub is a protocol model. Production systems require silicon-backed debug authentication and fuse provisioning.</p></aside>
-      </div>
-    </section>
+      <section class="view" id="signing">
+        <div class="section-heading compact"><p class="eyebrow">Mission 02 &middot; Artifact assurance</p><h1>Signing Bay</h1><p class="lede">One envelope format, two trust models, and the same verification behavior in CMake, Bazel, and Yocto.</p></div>
+        <div class="method-toggle" role="tablist" aria-label="Signing method">
+          <button class="method active" role="tab" data-method="openssl">OpenSSL key pair</button>
+          <button class="method" role="tab" data-method="pki">PKI certificate chain</button>
+        </div>
+        <div class="signing-grid">
+          <section class="panel method-detail">
+            <p class="eyebrow" id="method-label">Development signing</p>
+            <h2 id="method-title">Direct key-pair trust</h2>
+            <p id="method-copy">A P-256 private key signs the SHA-256 digest. The verifier receives a separately provisioned public key and accepts only a matching signature.</p>
+            <dl id="method-facts"><div><dt>Signer material</dt><dd>Private EC P-256 key</dd></div><div><dt>Verifier anchor</dt><dd>Explicit public key</dd></div><div><dt>Use case</dt><dd>Local builds and CI smoke tests</dd></div></dl>
+          </section>
+          <section class="panel envelope">
+            <div class="panel-header"><div><p class="eyebrow">Detached signature</p><h2>Envelope contents</h2></div><span class="chip">JSON v1</span></div>
+            <pre id="envelope-code"></pre>
+            <p class="caption">The artifact itself is never modified. Its digest and signature travel as a portable adjacent <code>.sig</code> envelope.</p>
+          </section>
+        </div>
+        <div class="signing-grid signing-grid-lower">
+          <section class="integration-strip" aria-label="Build integrations"><div><span>01</span><strong>CMake</strong><p>Signs selected can-utils targets after build.</p></div><div><span>02</span><strong>Bazel</strong><p>Uses the reusable <code>signed_binary</code> macro.</p></div><div><span>03</span><strong>Yocto</strong><p>Signs image and package artifacts from protected configuration.</p></div><div><span>04</span><strong>Target</strong><p>Pins only public trust material in the image.</p></div></section>
+          <aside class="panel objectives-panel" data-group="signing">
+            <p class="eyebrow">Mission objectives</p><h2>Signing Bay tasks</h2>
+            <ul>
+              <li data-objective="signing-openssl"><span class="box"></span>Inspect OpenSSL key-pair trust</li>
+              <li data-objective="signing-pki"><span class="box"></span>Inspect PKI certificate-chain trust</li>
+            </ul>
+          </aside>
+        </div>
+      </section>
 
-    <section class="view" id="assessment">
-      <div class="section-heading compact"><p class="eyebrow">Authorized local assessment</p><h1>Security test ledger</h1><p class="lede">The test lane attacks repository-owned trust boundaries only. Every scenario below must fail closed.</p></div>
-      <div class="assessment-toolbar"><div class="filter-group" role="group" aria-label="Assessment filters"><button class="filter active" data-filter="all">All checks</button><button class="filter" data-filter="signature">Signature</button><button class="filter" data-filter="trust">PKI trust</button><button class="filter" data-filter="jtag">JTAG</button></div><code>./pentest/run_security_checks.sh</code></div>
-      <div class="test-grid" id="test-grid"></div>
-      <section class="panel assessment-footer"><div><p class="eyebrow">Scope boundary</p><h2>Designed for repeatable, authorized validation</h2></div><p>These checks use temporary keys and local files. They do not discover, scan, or interact with external hosts, networks, or devices.</p></section>
-    </section>
-  </main>
-  <footer>Secure Signing Pipeline reference implementation <span>•</span> No private key material belongs in this repository or a deployed image.</footer>
+      <section class="view" id="jtag">
+        <div class="section-heading compact"><p class="eyebrow">Mission 03 &middot; Debug authentication</p><h1>JTAG Range</h1><p class="lede">The target starts locked. A host must prove possession of trusted signing material over a fresh, one-time device challenge.</p></div>
+        <div class="jtag-grid">
+          <section class="panel simulator">
+            <div class="panel-header"><div><p class="eyebrow">Interactive protocol model</p><h2>Challenge response</h2></div><span class="chip" id="jtag-state">Locked</span></div>
+            <div class="protocol-track"><div class="endpoint"><b>Target</b><span>Boot ROM / enclave</span></div><div class="protocol-line" id="protocol-line"><span id="protocol-event">No session challenge issued</span></div><div class="endpoint host"><b>Debug host</b><span>OpenOCD + signer</span></div></div>
+            <div class="nonce-box"><span>Pending nonce</span><code id="nonce-value">-- no active nonce --</code></div>
+            <div class="sim-controls"><button class="command primary" id="issue-nonce">Issue nonce</button><button class="command" id="submit-response" disabled>Present signed response</button><button class="command danger" id="replay-response" disabled>Replay prior response</button></div>
+          </section>
+          <aside class="panel protocol-notes">
+            <p class="eyebrow">Hardware boundary</p><h2>What protects the port</h2>
+            <ol><li>Secure firmware creates 32 random bytes.</li><li>The host signs exactly those bytes.</li><li>Boot ROM validates against pinned trust.</li><li>Unlock applies to one debug session only.</li></ol>
+            <p class="warning">The repository C stub is a protocol model. Production systems require silicon-backed debug authentication and fuse provisioning.</p>
+            <div class="objectives" data-group="jtag">
+              <p class="eyebrow">Mission objectives</p>
+              <ul>
+                <li data-objective="jtag-issue"><span class="box"></span>Issue a debug-unlock nonce</li>
+                <li data-objective="jtag-unlock"><span class="box"></span>Present a trusted signed response</li>
+                <li data-objective="jtag-replay"><span class="box"></span>Attempt a replay and watch it fail</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="assessment">
+        <div class="section-heading compact"><p class="eyebrow">Mission 04 &middot; Authorized local assessment</p><h1>Red Team Ops</h1><p class="lede">The test lane attacks repository-owned trust boundaries only. Every scenario below must fail closed.</p></div>
+        <div class="assessment-toolbar"><div class="filter-group" role="group" aria-label="Assessment filters"><button class="filter active" data-filter="all">All checks</button><button class="filter" data-filter="signature">Signature</button><button class="filter" data-filter="trust">PKI trust</button><button class="filter" data-filter="jtag">JTAG</button></div><code>./pentest/run_security_checks.sh</code></div>
+        <div class="test-grid" id="test-grid"></div>
+        <div class="signing-grid signing-grid-lower">
+          <section class="panel assessment-footer"><div><p class="eyebrow">Scope boundary</p><h2>Designed for repeatable, authorized validation</h2></div><p>These checks use temporary keys and local files. They do not discover, scan, or interact with external hosts, networks, or devices.</p></section>
+          <aside class="panel objectives-panel" data-group="assessment">
+            <p class="eyebrow">Mission objectives</p><h2>Red Team Ops tasks</h2>
+            <ul>
+              <li data-objective="assessment-signature"><span class="box"></span>Review signature-forging attempts</li>
+              <li data-objective="assessment-trust"><span class="box"></span>Review PKI trust attacks</li>
+              <li data-objective="assessment-jtag"><span class="box"></span>Review JTAG attack cases</li>
+            </ul>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="console-dock">
+    <div class="console-header"><span>Mission console</span><button id="console-toggle" aria-label="Toggle console" aria-expanded="true">_</button></div>
+    <div class="console-body" id="console-log"></div>
+  </footer>
   <script src="app.js"></script>
 </body>
 </html>

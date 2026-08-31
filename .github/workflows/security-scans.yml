@@ -1,0 +1,41 @@
+name: Embedded security scans
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  sbom:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install SBOM tooling
+        run: pip install --quiet -r security/requirements.txt
+      - name: Generate CycloneDX SBOM
+        run: python3 security/sbom/generate_sbom.py
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: security/sbom/sbom.json
+
+  sast:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SAST tooling
+        run: |
+          pip install --quiet -r security/requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+      - name: Run static analysis
+        run: ./security/sast/run_sast.sh
+
+  dast:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fuzz the verifier process boundary
+        run: python3 security/dast/fuzz_verify_artifact.py --iterations 300

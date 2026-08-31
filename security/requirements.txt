@@ -1,0 +1,2 @@
+bandit==1.9.4
+cyclonedx-bom==7.3.1
