@@ -34,6 +34,8 @@
       <button class="mission" data-view="signing"><span class="mission-index">02</span><span class="mission-name">Signing Bay</span><span class="mission-check" id="check-signing"></span></button>
       <button class="mission" data-view="jtag"><span class="mission-index">03</span><span class="mission-name">JTAG Range</span><span class="mission-check" id="check-jtag"></span></button>
       <button class="mission" data-view="assessment"><span class="mission-index">04</span><span class="mission-name">Red Team Ops</span><span class="mission-check" id="check-assessment"></span></button>
+      <button class="mission" data-view="binarylab"><span class="mission-index">05</span><span class="mission-name">Binary Lab</span><span class="mission-check" id="check-binarylab"></span></button>
+      <button class="mission" data-view="bootchain"><span class="mission-index">06</span><span class="mission-name">Boot Chain</span><span class="mission-check" id="check-bootchain"></span></button>
     </nav>
 
     <main>
@@ -141,6 +143,47 @@
             </ul>
           </aside>
         </div>
+      </section>
+
+      <section class="view" id="binarylab">
+        <div class="section-heading compact"><p class="eyebrow">Mission 05 &middot; On-disk layout</p><h1>Binary Lab</h1><p class="lede">The artifact bytes are never modified. Only the sidecar envelope changes across signing methods &mdash; inspect exactly what ships next to <code>candump</code>.</p></div>
+        <div class="method-toggle" role="tablist" aria-label="Binary layout">
+          <button class="method active" role="tab" data-layout="unsigned">Unsigned</button>
+          <button class="method" role="tab" data-layout="openssl">OpenSSL signed</button>
+          <button class="method" role="tab" data-layout="pki">PKI signed</button>
+        </div>
+        <div class="signing-grid">
+          <section class="panel layout-detail">
+            <div class="panel-header"><div><p class="eyebrow" id="layout-label">On disk</p><h2 id="layout-title">Unsigned artifact</h2></div><span class="chip" id="layout-filecount">1 file</span></div>
+            <div id="layout-diagram"></div>
+            <p class="caption" id="layout-caption"></p>
+          </section>
+          <aside class="panel objectives-panel" data-group="binarylab">
+            <p class="eyebrow">Mission objectives</p><h2>Binary Lab tasks</h2>
+            <ul>
+              <li data-objective="binarylab-unsigned"><span class="box"></span>Inspect the unsigned layout</li>
+              <li data-objective="binarylab-openssl"><span class="box"></span>Inspect the OpenSSL envelope</li>
+              <li data-objective="binarylab-pki"><span class="box"></span>Inspect the PKI envelope</li>
+            </ul>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="bootchain">
+        <div class="section-heading compact"><p class="eyebrow">Mission 06 &middot; Secure boot reference</p><h1>Boot Chain</h1><p class="lede">Modeled on TI TDA4x-class (Jacinto 7) secure boot: ROM &rarr; secure core (HSM role) &rarr; SPL &rarr; bootloader &rarr; kernel, plus the parallel JTAG gate implemented in this repo.</p></div>
+        <div class="boot-stepper" id="boot-stepper"></div>
+        <div class="signing-grid">
+          <section class="panel stage-detail" id="stage-detail"></section>
+          <aside class="panel objectives-panel" data-group="bootchain">
+            <p class="eyebrow">Mission objectives</p><h2>Boot Chain tasks</h2>
+            <ul>
+              <li data-objective="bootchain-rom"><span class="box"></span>Trace ROM &amp; secure-core stages</li>
+              <li data-objective="bootchain-bootloader"><span class="box"></span>Trace the bootloader stages</li>
+              <li data-objective="bootchain-kernel"><span class="box"></span>Trace kernel &amp; JTAG stages</li>
+            </ul>
+          </aside>
+        </div>
+        <p class="caption reference-note">Reference model inspired by TI TDA4x-class (Jacinto 7) secure boot architecture. Stage names and roles illustrate the general industry pattern &mdash; ROM, secure core/HSM, SPL, bootloader, kernel &mdash; and are not a verbatim reproduction of proprietary implementation details.</p>
       </section>
     </main>
   </div>

@@ -30,7 +30,9 @@ const OBJECTIVE_GROUPS = {
   overview: ["overview-briefed"],
   signing: ["signing-openssl", "signing-pki"],
   jtag: ["jtag-issue", "jtag-unlock", "jtag-replay"],
-  assessment: ["assessment-signature", "assessment-trust", "assessment-jtag"]
+  assessment: ["assessment-signature", "assessment-trust", "assessment-jtag"],
+  binarylab: ["binarylab-unsigned", "binarylab-openssl", "binarylab-pki"],
+  bootchain: ["bootchain-rom", "bootchain-bootloader", "bootchain-kernel"]
 };
 const TOTAL_OBJECTIVES = Object.values(OBJECTIVE_GROUPS).flat().length;
 const PROGRESS_KEY = "ecu-security-range-progress";
@@ -142,6 +144,86 @@ document.querySelectorAll('.filter').forEach((button) => button.addEventListener
   }
 }));
 
+// -- Binary Lab: real envelope schema from signing/sign_artifact.py, rendered as a byte/field layout. --
+const LAYOUT_DATA = {
+  unsigned: {
+    label: "On disk", title: "Unsigned artifact", filecount: "1 file",
+    caption: "No sidecar file exists. There is nothing to verify: any party that can write to this path can silently replace candump.",
+    blocks: [{ kind: "artifact", label: "candump", sub: "ELF64 executable \u2014 raw build output" }]
+  },
+  openssl: {
+    label: "On disk", title: "OpenSSL-signed artifact", filecount: "2 files",
+    caption: "candump is byte-identical to the unsigned build. Trust is carried entirely by the adjacent candump.sig envelope, verified against an explicitly provisioned public key.",
+    blocks: [
+      { kind: "artifact", label: "candump", sub: "ELF64 executable \u2014 byte-identical to unsigned build" },
+      { kind: "envelope", label: "candump.sig", sub: "JSON signature envelope (secure-signing-envelope/v1)", fields: [
+        ["format", "secure-signing-envelope/v1"], ["method", "openssl"], ["digest_algorithm", "sha256"],
+        ["artifact_sha256", "64-char hex digest"], ["signature_base64", "base64 EC signature"]
+      ] }
+    ]
+  },
+  pki: {
+    label: "On disk", title: "PKI-signed artifact", filecount: "2 files",
+    caption: "Same byte-identical candump. The envelope grows by two fields so a verifier only needs the pinned Root CA \u2014 not a per-device public key \u2014 to validate trust.",
+    blocks: [
+      { kind: "artifact", label: "candump", sub: "ELF64 executable \u2014 byte-identical to unsigned build" },
+      { kind: "envelope", label: "candump.sig", sub: "JSON signature envelope (secure-signing-envelope/v1)", fields: [
+        ["format", "secure-signing-envelope/v1"], ["method", "pki"], ["digest_algorithm", "sha256"],
+        ["artifact_sha256", "64-char hex digest"],
+        ["certificate_pem", "leaf certificate (added)", true], ["chain_pem", "intermediate CA chain (added)", true],
+        ["signature_base64", "base64 EC signature"]
+      ] }
+    ]
+  }
+};
+
+function renderLayout(key) {
+  const data = LAYOUT_DATA[key];
+  document.querySelector('#layout-label').textContent = data.label;
+  document.querySelector('#layout-title').textContent = data.title;
+  document.querySelector('#layout-filecount').textContent = data.filecount;
+  document.querySelector('#layout-caption').textContent = data.caption;
+  document.querySelector('#layout-diagram').innerHTML = data.blocks.map((block) => {
+    if (block.kind === 'artifact') {
+      return `<div class="layout-block layout-artifact"><strong>${block.label}</strong><span>${block.sub}</span></div>`;
+    }
+    const fields = block.fields.map(([name, value, added]) => `<div class="layout-field${added ? ' added' : ''}"><code>${name}</code><span>${value}</span></div>`).join('');
+    return `<div class="layout-block layout-envelope"><strong>${block.label}</strong><span>${block.sub}</span><div class="layout-fields">${fields}</div></div>`;
+  }).join('<div class="layout-plus">+</div>');
+}
+
+document.querySelectorAll('[data-layout]').forEach((button) => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-layout]').forEach((item) => item.classList.toggle('active', item === button));
+  renderLayout(button.dataset.layout);
+  completeObjective(`binarylab-${button.dataset.layout}`, `Binary Lab: inspected the ${button.dataset.layout} on-disk layout.`);
+}));
+
+// -- Boot Chain: reference model inspired by TI TDA4x-class (Jacinto 7) secure boot. --
+const BOOT_STAGES = [
+  { id: 'rom', group: 'rom', name: 'Boot ROM', tag: 'Immutable', role: 'First code executed on power-up. Reads the boot device and an X.509-wrapped boot image before running anything else.', verifiedBy: 'Fixed silicon logic \u2014 cannot be patched or bypassed', key: 'SoC vendor root public-key hash burned into eFuse/OTP' },
+  { id: 'r5spl', group: 'rom', name: 'R5 SPL', tag: 'Secondary loader', role: 'Runs on the safety island (e.g. Cortex-R5F). Minimal DDR and clock bring-up, then hands off to the secure core.', verifiedBy: 'Boot ROM, using the same root-of-trust certificate chain', key: 'Same root public key / certificate chain as the ROM stage' },
+  { id: 'securecore', group: 'rom', name: 'Secure core (HSM role)', tag: 'TIFS / DMSC-class', role: 'Dedicated security microcontroller. Owns root keys and provides signature verification and crypto services to every other core over a secure message queue.', verifiedBy: 'Boot ROM', key: 'Hardware root key in on-chip secure storage \u2014 never exposed to application cores' },
+  { id: 'a72spl', group: 'bootloader', name: 'A72 SPL', tag: 'Bootloader stage', role: 'Brings up DDR for the main application cores (e.g. Cortex-A72) and loads the next stage.', verifiedBy: 'Secure core / HSM', key: 'Leaf signing key from the same PKI chain used for application artifacts' },
+  { id: 'uboot', group: 'bootloader', name: 'U-Boot', tag: 'Bootloader', role: 'Loads the kernel, device tree, and initramfs as a signed FIT image.', verifiedBy: "Public key compiled into U-Boot's control device tree (CONFIG_FIT_SIGNATURE)", key: "Root CA / signing public key \u2014 matches this repo's meta-uboot-secure layer" },
+  { id: 'kernel', group: 'kernel', name: 'Linux kernel', tag: 'OS', role: 'Verifies signed kernel modules before loading them.', verifiedBy: 'Kernel keyring populated at build time (CONFIG_MODULE_SIG)', key: "Module signing key \u2014 demonstrated with the WireGuard module in this repo" },
+  { id: 'jtag', group: 'kernel', name: 'JTAG debug gate', tag: 'Parallel path', role: 'Not part of the linear boot chain. Disabled by default; a debug host must sign a fresh device nonce to unlock one session.', verifiedBy: 'Secure core / boot ROM trust anchor', key: 'Same signing key material \u2014 see the JTAG Range mission' }
+];
+
+function renderBootStepper() {
+  document.querySelector('#boot-stepper').innerHTML = BOOT_STAGES.map((stage, index) => `<button class="stage-btn${index === 0 ? ' active' : ''}" data-stage="${stage.id}"><span>${index + 1}</span>${stage.name}</button>`).join('<div class="stage-link"></div>');
+  document.querySelectorAll('.stage-btn').forEach((button) => button.addEventListener('click', () => {
+    document.querySelectorAll('.stage-btn').forEach((item) => item.classList.toggle('active', item === button));
+    renderStageDetail(button.dataset.stage);
+  }));
+  renderStageDetail(BOOT_STAGES[0].id);
+}
+
+function renderStageDetail(id) {
+  const stage = BOOT_STAGES.find((item) => item.id === id);
+  document.querySelector('#stage-detail').innerHTML = `<div class="panel-header"><div><p class="eyebrow">${stage.tag}</p><h2>${stage.name}</h2></div></div><p class="caption">${stage.role}</p><dl><div><dt>Verified by</dt><dd>${stage.verifiedBy}</dd></div><div><dt>Key material</dt><dd>${stage.key}</dd></div></dl>`;
+  completeObjective(`bootchain-${stage.group}`, `Boot Chain: traced the ${stage.name} stage.`);
+}
+
 function drawTrustCanvas() {
   const canvas = document.querySelector('#trust-canvas');
   const context = canvas.getContext('2d');
@@ -195,6 +277,8 @@ function runBootSequence() {
 
 renderAssessments();
 document.querySelector('#envelope-code').textContent = signingMethods.openssl.envelope;
+renderLayout('unsigned');
+renderBootStepper();
 drawTrustCanvas();
 renderProgress();
 tickClock();
