@@ -5,6 +5,17 @@ with either a raw OpenSSL key pair or a pinned-root PKI chain. It includes CMake
 for `can-utils`, a reusable Bazel macro, Yocto layer metadata, and a simulated one-time
 JTAG debug-authentication exchange.
 
+Open the interactive [Secure Pipeline Console](docs/portal/index.html) to explore the trust
+path, compare signing methods, step through JTAG authentication, and review the local
+security assessment checks.
+
+## Published documentation
+
+GitHub Pages publishes the console after a push to `main` that changes `docs/portal`. In the
+repository's **Settings → Pages**, select **GitHub Actions** as the source once. The published
+site will be available at `https://vinodneelakantam.github.io/Secure_Signing_Pipeline/` after
+the `Deploy documentation portal` workflow completes.
+
 The checked-in upstream projects are Git submodules:
 
 - `can-utils`: SocketCAN command-line tools, built and signed through CMake.
@@ -46,6 +57,18 @@ python3 signing/verify_artifact.py \
 ```
 
 Run the security tests with `python3 -m unittest discover -s tests -v`.
+
+## Security assessment
+
+Run the repository-local adversarial checks with:
+
+```bash
+./pentest/run_security_checks.sh
+```
+
+This is an authorized test lane for this codebase only. It verifies that malformed signature
+envelopes, method-downgrade attempts, signing-key substitution, untrusted PKI roots,
+certificate/key mismatch, artifact tampering, and JTAG challenge replay are rejected.
 
 ## Security boundary
 
