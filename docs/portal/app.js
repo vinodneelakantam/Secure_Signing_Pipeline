@@ -340,6 +340,7 @@ document.querySelector('#bank-category').addEventListener('change', renderBank);
 function drawTrustCanvas() {
   const canvas = document.querySelector('#trust-canvas');
   const context = canvas.getContext('2d');
+  if (!context) return; // canvas 2D context unavailable (e.g. blocked by a privacy setting); skip the decorative diagram
   const ratio = window.devicePixelRatio || 1;
   const width = canvas.clientWidth;
   const height = canvas.clientWidth * 0.43;
@@ -351,7 +352,7 @@ function drawTrustCanvas() {
   connect(0,1,'#ffb648'); connect(1,2,'#43d9ff'); connect(2,3,'#43d9ff'); connect(2,4,'#ff5d5d');
   nodes.forEach(([x,y,title,detail], index) => { const [px,py]=point([x,y]); context.fillStyle='rgba(10,17,22,.9)'; context.strokeStyle=index===4?'#ff5d5d':index===1?'#ffb648':'#43d9ff'; context.lineWidth=2; context.fillRect(px-61,py-25,122,50); context.strokeRect(px-61,py-25,122,50); context.fillStyle='#d7ecf5'; context.fillText(title,px,py-4); context.fillStyle='#7d97a3'; context.font='10px DM Mono'; context.fillText(detail,px,py+12); context.font='600 12px Manrope'; });
 }
-window.addEventListener('resize', drawTrustCanvas);
+window.addEventListener('resize', () => safely(drawTrustCanvas));
 
 document.querySelector('#console-toggle').addEventListener('click', () => {
   const dock = document.querySelector('.console-dock');
@@ -442,15 +443,21 @@ function runBootSequence() {
   enterButton.addEventListener('click', enter);
 }
 
-renderAssessments();
-document.querySelector('#envelope-code').textContent = signingMethods.openssl.envelope;
-renderLayout('unsigned');
-renderBootStepper();
-renderSbomList();
-renderSca('before');
-renderBank();
-drawTrustCanvas();
-renderProgress();
-tickClock();
-setInterval(tickClock, 1000);
-runBootSequence();
+// A failure in any one of these (e.g. a canvas diagram) must never block the rest —
+// especially runBootSequence, which is what makes the console interactive at all.
+function safely(fn) {
+  try { fn(); } catch (error) { console.error('ECU Security Range init step failed:', error); }
+}
+
+safely(renderAssessments);
+safely(() => { document.querySelector('#envelope-code').textContent = signingMethods.openssl.envelope; });
+safely(() => renderLayout('unsigned'));
+safely(renderBootStepper);
+safely(renderSbomList);
+safely(() => renderSca('before'));
+safely(renderBank);
+safely(drawTrustCanvas);
+safely(renderProgress);
+safely(tickClock);
+setInterval(() => safely(tickClock), 1000);
+safely(runBootSequence);
